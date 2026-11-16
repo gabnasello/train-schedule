@@ -31,7 +31,13 @@ const CONFIG = {
     to:    'Mechelen',   // aankomststation 's namiddags
     start: '15:00',      // begin van het tijdvenster
     end:   '17:30'       // einde van het tijdvenster
-  }
+  },
+  nowMinutes: 120,        // tab "Nu": toon treinen van de komende X minuten
+  moreMinutes: 60,        // knop "Toon meer": elke klik laadt zoveel minuten extra
+  switchTime: '12:00',    // vanaf dit uur geldt de namiddag-richting (en is "terug" de standaard bij geen locatie)
+  startTab: 'auto'        // welke tab opent: 'auto', 'now', 'morning' of 'afternoon'
+                          // 'auto' = ochtend tot het einde van het ochtendvenster, daarna "Nu" tot switchTime,
+                          //          namiddag tot het einde van het namiddagvenster, daarna "Nu" tot middernacht
 };
 /* ================================================================
    Einde instellingen. Hieronder staat enkel code — niet nodig
@@ -97,10 +103,14 @@ const CONFIG = {
   }
   .toggle button{
     flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:3px;
     background: var(--board-bg-2);
     border: 1px solid var(--line);
     color: var(--grey);
-    padding: 10px 8px;
+    padding: 9px 4px;
     font-family: inherit;
     font-size: 12px;
     letter-spacing: 1.5px;
@@ -109,6 +119,34 @@ const CONFIG = {
     border-radius: 3px;
     transition: all .15s ease;
   }
+  .toggle button small{
+    font-size: 9px;
+    letter-spacing: 0.3px;
+    text-transform: none;
+    opacity: .85;
+  }
+  .note{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-wrap:wrap;
+    gap:8px;
+    margin: -4px 0 12px;
+    font-size: 11px;
+    color: var(--amber);
+  }
+  .note[hidden]{ display:none; }
+  .swap-btn{
+    background:none;
+    border:1px solid var(--line);
+    color: var(--grey);
+    padding:3px 8px;
+    border-radius:3px;
+    font-family:inherit;
+    font-size:10px;
+    cursor:pointer;
+  }
+  .swap-btn:hover{ color: var(--amber); border-color: var(--amber-dim); }
   .toggle button.active{
     color: var(--board-bg);
     background: var(--amber);
@@ -211,6 +249,23 @@ const CONFIG = {
     line-height:1.6;
   }
   .error{ color: var(--red); }
+  .more-btn{
+    display:block;
+    width:100%;
+    margin-top:10px;
+    background: var(--board-bg-2);
+    border:1px solid var(--line);
+    color: var(--amber);
+    padding: 12px 8px;
+    border-radius:4px;
+    font-family:inherit;
+    font-size:12px;
+    letter-spacing:1.5px;
+    text-transform:uppercase;
+    cursor:pointer;
+  }
+  .more-btn[hidden]{ display:none; }
+  .more-btn:hover{ border-color: var(--amber-dim); }
   .footer{
     margin-top: 14px;
     display:flex;
@@ -256,15 +311,22 @@ const CONFIG = {
   <div class="toggle">
     <button id="btn-morning" onclick="setMode('morning')"></button>
     <button id="btn-afternoon" onclick="setMode('afternoon')"></button>
+    <button id="btn-now" onclick="setMode('now')"></button>
   </div>
 
   <div class="route-label" id="route-label"></div>
+  <div class="note" id="note" hidden>
+    <span id="note-text"></span>
+    <button class="swap-btn" onclick="flipNowDirection()">⇄ keer om</button>
+  </div>
 
   <div class="board">
     <div id="rows">
       <div class="empty blink">Treinen laden…</div>
     </div>
   </div>
+
+  <button class="more-btn" id="more-btn" onclick="showMore()" hidden></button>
 
   <div class="footer">
     <span id="last-updated">—</span>
@@ -273,110 +335,283 @@ const CONFIG = {
 </div>
 
 <script>
-function currentDefaultMode(){
-  const h = new Date().getHours();
-  return h < 12 ? 'morning' : 'afternoon';
+function $(id){ return document.getElementById(id); }
+function pad(n){ return n.toString().padStart(2,'0'); }
+
+const NOW_MINUTES = CONFIG.nowMinutes || 120;
+const MORE_MINUTES = CONFIG.moreMinutes || 60;
+let extraMinutes = 0;     // grows each time "Toon meer" is pressed; reset when switching tab
+let mode = null;          // 'morning' | 'afternoon' | 'now'
+let timer = null;
+let loadToken = 0;        // guards against slow responses arriving out of order
+let flipNow = false;      // manual "other direction" override in 'now' mode
+let stationCache = null;
+
+function toMin(hhmmStr){
+  const [h, m] = hhmmStr.split(':').map(Number);
+  return h*60 + m;
 }
 
-let mode = currentDefaultMode();
-let timer = null;
+function minutesNow(){
+  const d = new Date();
+  return d.getHours()*60 + d.getMinutes();
+}
+
+// Before switchTime the morning direction (inbound) is the likely one,
+// afterwards the afternoon direction (outbound). Used as the fallback
+// direction in 'Nu' when there is no location.
+function timeOfDayMode(){
+  return minutesNow() < toMin(CONFIG.switchTime || '12:00') ? 'morning' : 'afternoon';
+}
+
+function initialMode(){
+  const t = CONFIG.startTab;
+  if(t === 'now' || t === 'morning' || t === 'afternoon') return t;
+  const n = minutesNow();
+  if(n <= toMin(CONFIG.morning.end)) return 'morning';        // still within the morning commute
+  if(n < toMin(CONFIG.switchTime || '12:00')) return 'now';   // morning commute over, before midday
+  if(n <= toMin(CONFIG.afternoon.end)) return 'afternoon';    // afternoon commute (not over yet)
+  return 'now';                                               // evening, after the afternoon commute
+}
+
+function fmtDur(m){
+  return m % 60 === 0 ? `${m/60} u` : `${m} min`;
+}
+
+function makeBtn(id, title, sub){
+  const b = $(id);
+  b.innerHTML = '';
+  const t = document.createElement('span');
+  t.textContent = title;
+  const s = document.createElement('small');
+  s.textContent = sub;
+  b.appendChild(t);
+  b.appendChild(s);
+}
 
 function initLabels(){
-  document.getElementById('page-title').textContent = `${CONFIG.morning.from} ⇄ ${CONFIG.morning.to}`;
-  document.getElementById('btn-morning').textContent = `Ochtend · ${CONFIG.morning.from} → ${CONFIG.morning.to}`;
-  document.getElementById('btn-afternoon').textContent = `Namiddag · ${CONFIG.afternoon.from} → ${CONFIG.afternoon.to}`;
+  $('page-title').textContent = `${CONFIG.morning.from} ⇄ ${CONFIG.morning.to}`;
+  makeBtn('btn-morning', 'Ochtend', `${CONFIG.morning.from} → ${CONFIG.morning.to}`);
+  makeBtn('btn-afternoon', 'Namiddag', `${CONFIG.afternoon.from} → ${CONFIG.afternoon.to}`);
+  makeBtn('btn-now', 'Nu', `dichtstbij · ${fmtDur(NOW_MINUTES)}`);
 }
 
 function setMode(m){
   mode = m;
-  document.getElementById('btn-morning').classList.toggle('active', m==='morning');
-  document.getElementById('btn-afternoon').classList.toggle('active', m==='afternoon');
-  const c = CONFIG[m];
-  document.getElementById('route-label').textContent = `${c.from} → ${c.to}  ·  ${c.start}–${c.end}`;
+  extraMinutes = 0;
+  $('more-btn').hidden = true;
+  ['morning','afternoon','now'].forEach(k => $('btn-' + k).classList.toggle('active', k === m));
+  $('note').hidden = (m !== 'now');
+  if(m === 'now'){
+    flipNow = false;
+    $('note-text').textContent = '';
+    $('route-label').textContent = 'Locatie bepalen…';
+  } else {
+    const c = CONFIG[m];
+    $('route-label').textContent = `${c.from} → ${c.to}  ·  ${c.start}–${c.end}`;
+  }
   load();
 }
 
-function pad(n){ return n.toString().padStart(2,'0'); }
+function flipNowDirection(){
+  flipNow = !flipNow;
+  extraMinutes = 0;
+  load();
+}
+
+function showMore(){
+  extraMinutes += MORE_MINUTES;
+  load(true);   // keep the current list on screen while the extra trains load
+}
 
 function updateClock(){
   const d = new Date();
-  document.getElementById('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 setInterval(updateClock, 1000);
 updateClock();
 
-function timeStrToMinutes(hhmm){
-  const [h,m] = hhmm.split(':').map(Number);
-  return h*60+m;
+/* ---------- date helpers ---------- */
+function atTime(hhmmStr){
+  const [h, m] = hhmmStr.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d;
 }
-
+function ddmmyy(d){ return `${pad(d.getDate())}${pad(d.getMonth()+1)}${d.getFullYear().toString().slice(-2)}`; }
+function hhmm(d){ return `${pad(d.getHours())}${pad(d.getMinutes())}`; }
 function fmtTime(unixSeconds){
   const d = new Date(parseInt(unixSeconds,10)*1000);
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+function depMs(c){ return parseInt(c.departure.time,10)*1000; }
+// scheduled departure + delay = when the train really leaves
+function depEffectiveMs(c){ return depMs(c) + parseInt(c.departure.delay || '0', 10)*1000; }
 
-function minutesToTimeStr(mins){
-  const h = Math.floor(mins/60), m = mins%60;
-  return `${pad(h)}${pad(m)}`;
-}
-
-async function fetchBatch(s, date, time){
-  const url = `https://api.irail.be/connections/?from=${encodeURIComponent(s.from)}&to=${encodeURIComponent(s.to)}&date=${date}&time=${time}&timesel=departure&results=10&format=json&lang=en`;
+/* ---------- iRail ---------- */
+async function fetchBatch(s, when){
+  const url = `https://api.irail.be/connections/?from=${encodeURIComponent(s.from)}&to=${encodeURIComponent(s.to)}&date=${ddmmyy(when)}&time=${hhmm(when)}&timesel=departure&results=10&format=json&lang=en`;
   const res = await fetch(url);
   if(!res.ok) throw new Error('HTTP ' + res.status);
   const data = await res.json();
   return data.connection || [];
 }
 
-async function load(){
-  const rowsEl = document.getElementById('rows');
-  rowsEl.innerHTML = '<div class="empty blink">Treinen laden…</div>';
+// All departures between startDate and endDate. The API returns a limited
+// number of connections per request, so keep asking, moving past the last
+// departure each time, until the whole window is covered.
+async function fetchWindow(s, startDate, endDate){
+  const seen = new Map();
+  let cursor = new Date(startDate);
+  let guard = 0;
+  while(cursor <= endDate && guard < 8){
+    guard++;
+    const batch = await fetchBatch(s, cursor);
+    if(batch.length === 0) break;
+    let last = cursor.getTime();
+    for(const c of batch){
+      const t = depMs(c);
+      if(t >= startDate.getTime() && t <= endDate.getTime()){
+        const key = c.departure.departureConnection || (c.departure.time + '-' + c.departure.vehicle);
+        seen.set(key, c);
+      }
+      if(t > last) last = t;
+    }
+    if(last <= cursor.getTime()) break; // no progress, avoid infinite loop
+    cursor = new Date(last + 60000);
+  }
+  return Array.from(seen.values()).sort((a,b) => depMs(a) - depMs(b));
+}
 
-  const c = CONFIG[mode];
-  const s = { from: c.from, to: c.to };
-  const w = { start: c.start, end: c.end };
-  const now = new Date();
-  const dd = pad(now.getDate()), mm = pad(now.getMonth()+1), yy = now.getFullYear().toString().slice(-2);
-  const date = `${dd}${mm}${yy}`;
-  const startMin = timeStrToMinutes(w.start);
-  const endMin = timeStrToMinutes(w.end);
+async function loadStations(){
+  if(stationCache) return stationCache;
+  const res = await fetch('https://api.irail.be/stations/?format=json&lang=en');
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  stationCache = data.station || [];
+  return stationCache;
+}
+
+function findStation(list, name){
+  const n = name.trim().toLowerCase();
+  const std = s => (s.standardname || '').toLowerCase();
+  const nm = s => (s.name || '').toLowerCase();
+  return list.find(s => std(s) === n || nm(s) === n)
+      || list.find(s => std(s).startsWith(n));
+}
+
+function coordsOf(st){
+  let lat = parseFloat(st.locationY), lon = parseFloat(st.locationX);
+  if(lat < lon){ const t = lat; lat = lon; lon = t; } // Belgium: lat (~51) is always larger than lon (~4)
+  return { lat, lon };
+}
+
+/* ---------- location ---------- */
+function getPosition(){
+  return new Promise((resolve, reject) => {
+    if(!navigator.geolocation) return reject({ code: 0 });
+    navigator.geolocation.getCurrentPosition(
+      p => resolve(p.coords),
+      e => reject(e),
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    );
+  });
+}
+
+function haversineKm(lat1, lon1, lat2, lon2){
+  const R = 6371, rad = x => x * Math.PI / 180;
+  const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function fmtDist(km){
+  return km < 1 ? `${Math.round(km*1000)} m` : `${km.toFixed(1).replace('.', ',')} km`;
+}
+
+// Picks the commute route that departs from the station closest to you.
+// Falls back to the morning/afternoon route (by time of day) if location fails.
+async function resolveNowRoute(){
+  const routes = [CONFIG.morning, CONFIG.afternoon];
+  let route = CONFIG[timeOfDayMode()];
+  let note;
+  try{
+    const [pos, stations] = await Promise.all([getPosition(), loadStations()]);
+    let best = null;
+    for(const r of routes){
+      const st = findStation(stations, r.from);
+      if(!st) continue;
+      const c = coordsOf(st);
+      const d = haversineKm(pos.latitude, pos.longitude, c.lat, c.lon);
+      if(!best || d < best.d) best = { r, d };
+    }
+    if(best){
+      route = best.r;
+      note = `📍 Dichtstbij: ${best.r.from} (${fmtDist(best.d)})`;
+    } else {
+      note = 'Station niet gevonden — route volgens het uur';
+    }
+  } catch(e){
+    note = (e && e.code === 1)
+      ? 'Locatie geweigerd — route volgens het uur'
+      : 'Locatie niet beschikbaar — route volgens het uur';
+  }
+  if(flipNow){
+    route = { from: route.to, to: route.from };
+    note += ' · omgekeerd';
+  }
+  return { route, note };
+}
+
+/* ---------- main ---------- */
+async function load(quiet){
+  const token = ++loadToken;
+  const rowsEl = $('rows');
+  if(!quiet) rowsEl.innerHTML = '<div class="empty blink">Treinen laden…</div>';
 
   try{
-    // keep fetching batches, advancing past the last departure each time,
-    // until we've covered the whole window (the API returns a limited
-    // number of connections per request, so one call often isn't enough)
-    const seen = new Map();
-    let cursorMin = startMin;
-    let guard = 0;
-    while(cursorMin <= endMin && guard < 8){
-      guard++;
-      const batch = await fetchBatch(s, date, minutesToTimeStr(cursorMin));
-      if(batch.length === 0) break;
+    let route, start, end, emptyMsg, keepFrom = null;
 
-      let lastMin = cursorMin;
-      for(const c of batch){
-        const t = new Date(parseInt(c.departure.time,10)*1000);
-        const mins = t.getHours()*60 + t.getMinutes();
-        if(mins >= startMin && mins <= endMin){
-          const key = c.departure.departureConnection || (c.departure.time + '-' + c.departure.vehicle);
-          seen.set(key, c);
-        }
-        if(mins > lastMin) lastMin = mins;
-      }
-      if(lastMin <= cursorMin) break; // no progress, avoid infinite loop
-      cursorMin = lastMin + 1;
+    if(mode === 'now'){
+      const r = await resolveNowRoute();
+      if(token !== loadToken) return;
+      route = r.route;
+      const now = new Date();
+      start = new Date(now.getTime() - 10*60000);   // catch trains that are delayed
+      const span = NOW_MINUTES + extraMinutes;
+      end = new Date(now.getTime() + span*60000);
+      keepFrom = now.getTime();
+      $('note-text').textContent = r.note;
+      $('route-label').textContent = `${route.from} → ${route.to}  ·  nu → +${fmtDur(span)}`;
+      emptyMsg = `Geen treinen in de komende ${fmtDur(span)}.`;
+    } else {
+      const c = CONFIG[mode];
+      route = c;
+      start = atTime(c.start);
+      end = new Date(atTime(c.end).getTime() + extraMinutes*60000);
+      const endLabel = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+      $('route-label').textContent = `${c.from} → ${c.to}  ·  ${c.start}–${endLabel}`;
+      emptyMsg = `Geen treinen gevonden tussen ${c.start} en ${endLabel}.`;
     }
 
-    const conns = Array.from(seen.values()).sort((a,b) => parseInt(a.departure.time,10) - parseInt(b.departure.time,10));
+    let conns = await fetchWindow(route, start, end);
+    if(token !== loadToken) return;
+    if(keepFrom !== null) conns = conns.filter(c => depEffectiveMs(c) >= keepFrom);
 
     if(conns.length === 0){
-      rowsEl.innerHTML = `<div class="empty">Geen treinen gevonden tussen ${w.start} en ${w.end}.<br>Probeer te verversen of controleer belgiantrain.be.</div>`;
+      rowsEl.innerHTML = `<div class="empty">${emptyMsg}<br>Probeer te verversen of controleer belgiantrain.be.</div>`;
     } else {
       renderRows(conns);
     }
 
-    document.getElementById('last-updated').textContent = `bijgewerkt ${pad(new Date().getHours())}:${pad(new Date().getMinutes())}:${pad(new Date().getSeconds())}`;
+    $('more-btn').textContent = `▾ Toon meer · +${fmtDur(MORE_MINUTES)}`;
+    $('more-btn').hidden = false;
+
+    const n = new Date();
+    $('last-updated').textContent = `bijgewerkt ${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
   } catch(err){
+    if(token !== loadToken) return;
+    $('more-btn').hidden = true;
     rowsEl.innerHTML = `<div class="error">Kan geen verbinding maken met de iRail-data.<br>${err.message}<br><br>Controleer je internetverbinding of probeer later opnieuw.</div>`;
   }
 }
@@ -401,13 +636,10 @@ function renderRow(c, isNext, isPast){
 }
 
 function renderRows(conns){
-  const rowsEl = document.getElementById('rows');
   const nowMs = Date.now();
   let nextMarked = false;
-
-  rowsEl.innerHTML = conns.map(c => {
-    const depMs = new Date(parseInt(c.departure.time,10)*1000).getTime();
-    const isPast = depMs <= nowMs;
+  $('rows').innerHTML = conns.map(c => {
+    const isPast = depEffectiveMs(c) <= nowMs;
     const isNext = !nextMarked && !isPast;
     if(isNext) nextMarked = true;
     return renderRow(c, isNext, isPast);
@@ -415,9 +647,8 @@ function renderRows(conns){
 }
 
 initLabels();
-setMode(mode);
-if(timer) clearInterval(timer);
-timer = setInterval(load, 60000);
+setMode(initialMode());
+timer = setInterval(() => load(true), 60000);
 </script>
 </body>
 </html>

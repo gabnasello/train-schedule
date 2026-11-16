@@ -12,10 +12,60 @@ it from any device.
   an afternoon route.
 - Automatically picks the right window depending on when you open it
   (before/after noon), with a toggle to switch manually.
+- A **Nu** tab uses your location to show the next trains from the nearest
+  commute station (see below).
 - Refreshes every 60 seconds and shows live delays, platform, and train
   number.
 - Everything you'd ever want to change lives in one clearly marked block at
   the top of `index.html`.
+
+## "Nu" tab: nearest station, next trains
+
+A third tab, **Nu**, shows the trains leaving in the next 2 hours from
+whichever of your commute stations you are closest to:
+
+1. Tap **Nu** — the browser asks for permission to use your location.
+2. The app looks up the coordinates of your configured stations (via iRail's
+   `/stations/` endpoint), picks the closest one, and shows the route that
+   departs from it (e.g. near Mechelen → Mechelen → Leuven).
+3. If location is denied or unavailable, it falls back to the morning/afternoon
+   route by time of day. The **⇄ keer om** button flips the direction manually.
+
+Your position never leaves your device: the browser only compares it with the
+station coordinates locally; iRail only receives station names and times.
+Location needs a secure page, so it works on the GitHub Pages `https://` link
+(not always when opening the file straight from disk).
+
+Trains that are delayed but have not actually left yet stay "upcoming"
+(scheduled time + delay is used to decide what is past).
+
+### Which tab opens first
+
+With the default `startTab: 'auto'` the app opens on the most useful tab for
+the time of day:
+
+| When you open it | Tab shown |
+|---|---|
+| From midnight until the end of the morning window (e.g. 09:00) | Ochtend |
+| After the morning window, before 12:00 | **Nu** |
+| From 12:00 until the end of the afternoon window (e.g. 17:30) | Namiddag |
+| After the afternoon window, until midnight | **Nu** |
+
+In **Nu**, if location is denied or switched off, the direction falls back to
+the likely one: inbound (morning route) before 12:00, outbound (afternoon
+route) from 12:00 on. **⇄ keer om** always lets you flip it.
+
+Settings in the `CONFIG` block: `nowMinutes` (default `120`),
+`switchTime` (default `'12:00'`, the morning/afternoon switch) and `startTab`
+(`'auto'`, `'now'`, `'morning'` or `'afternoon'` to always open on one tab).
+
+## "Toon meer" button
+
+Under the list on every tab, **Toon meer · +1 u** loads the trains after
+the ones shown. Each press extends the window by another hour, as many times
+as you like; the route line above the list shows the new end time. Switching
+tab (or flipping direction in **Nu**) goes back to the normal window. The step
+is the `moreMinutes` setting in `CONFIG` (default `60`).
 
 ## Publishing it on GitHub Pages
 
