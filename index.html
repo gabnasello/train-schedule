@@ -15,29 +15,20 @@
 
 <script>
 /* ================================================================
-   INSTELLINGEN — pas hier je stations en tijdvensters aan.
+   INSTELLINGEN — pas hier je stations aan.
    Dit is het enige stuk dat je ooit moet wijzigen.
-   Formaat voor start/end: "UU:MM" (24-uursnotatie).
+   Formaat voor uren: "UU:MM" (24-uursnotatie).
    ================================================================ */
 const CONFIG = {
-  morning: {
-    from:  'Mechelen',   // vertrekstation 's ochtends
-    to:    'Leuven',     // aankomststation 's ochtends
-    start: '07:20',      // begin van het tijdvenster
-    end:   '09:00'       // einde van het tijdvenster
-  },
-  afternoon: {
-    from:  'Leuven',     // vertrekstation 's namiddags
-    to:    'Mechelen',   // aankomststation 's namiddags
-    start: '15:00',      // begin van het tijdvenster
-    end:   '17:30'       // einde van het tijdvenster
-  },
-  nowMinutes: 120,        // tab "Nu": toon treinen van de komende X minuten
-  moreMinutes: 60,        // knop "Toon meer": elke klik laadt zoveel minuten extra
-  switchTime: '12:00',    // vanaf dit uur geldt de namiddag-richting (en is "terug" de standaard bij geen locatie)
-  startTab: 'auto'        // welke tab opent: 'auto', 'now', 'morning' of 'afternoon'
-                          // 'auto' = ochtend tot het einde van het ochtendvenster, daarna "Nu" tot switchTime,
-                          //          namiddag tot het einde van het namiddagvenster, daarna "Nu" tot middernacht
+  stationA: 'Mechelen',          // eerste station van je traject
+  stationB: 'Leuven',            // tweede station van je traject
+
+  nowMinutes: 120,               // zoveel minuten vooruit tonen (vanaf nu)
+  moreMinutes: 60,               // elke klik op "Toon meer" voegt zoveel minuten toe
+
+  // Alleen gebruikt als de locatie niet beschikbaar is:
+  firstDirectionFrom: '01:00',   // vanaf dit uur: richting A → B
+  secondDirectionFrom: '12:00'   // vanaf dit uur tot firstDirectionFrom: richting B → A
 };
 /* ================================================================
    Einde instellingen. Hieronder staat enkel code — niet nodig
@@ -95,71 +86,6 @@ const CONFIG = {
     letter-spacing: 2px;
     color: var(--amber);
     text-shadow: 0 0 8px var(--amber-glow);
-  }
-  .toggle{
-    display:flex;
-    gap:8px;
-    margin-bottom: 18px;
-  }
-  .toggle button{
-    flex:1;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    gap:3px;
-    background: var(--board-bg-2);
-    border: 1px solid var(--line);
-    color: var(--grey);
-    padding: 9px 4px;
-    font-family: inherit;
-    font-size: 12px;
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-    cursor:pointer;
-    border-radius: 3px;
-    transition: all .15s ease;
-  }
-  .toggle button small{
-    font-size: 9px;
-    letter-spacing: 0.3px;
-    text-transform: none;
-    opacity: .85;
-  }
-  .note{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    flex-wrap:wrap;
-    gap:8px;
-    margin: -4px 0 12px;
-    font-size: 11px;
-    color: var(--amber);
-  }
-  .note[hidden]{ display:none; }
-  .swap-btn{
-    background:none;
-    border:1px solid var(--line);
-    color: var(--grey);
-    padding:3px 8px;
-    border-radius:3px;
-    font-family:inherit;
-    font-size:10px;
-    cursor:pointer;
-  }
-  .swap-btn:hover{ color: var(--amber); border-color: var(--amber-dim); }
-  .toggle button.active{
-    color: var(--board-bg);
-    background: var(--amber);
-    box-shadow: 0 0 16px var(--amber-glow);
-    border-color: var(--amber);
-  }
-  .route-label{
-    text-align:center;
-    font-size: 12px;
-    color: var(--grey);
-    letter-spacing: 2px;
-    margin-bottom: 10px;
-    text-transform: uppercase;
   }
   .board{
     background: var(--board-bg);
@@ -299,26 +225,61 @@ const CONFIG = {
     0%{ opacity:0; transform: translateY(-4px); }
     100%{ opacity:1; transform: translateY(0); }
   }
+  .route-label{
+    text-align:center;
+    font-size: 21px;
+    letter-spacing: 2px;
+    color: var(--amber);
+    text-shadow: 0 0 10px var(--amber-glow);
+    margin: 6px 0 2px;
+  }
+  .route-sub{
+    text-align:center;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--grey);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .note{
+    text-align:center;
+    font-size: 11px;
+    color: var(--grey);
+    margin-bottom: 14px;
+    min-height: 14px;
+  }
+  .swap-btn{
+    display:block;
+    width:100%;
+    max-width: 440px;
+    margin: 0 auto 18px;
+    padding: 13px 8px;
+    background: rgba(255,179,0,0.08);
+    border: 1px solid var(--amber);
+    color: var(--amber);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 0 14px var(--amber-glow);
+  }
+  .swap-btn:active{ background: var(--amber); color: var(--board-bg); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="header">
     <h1 id="page-title">—</h1>
-    <div class="clock" id="clock">--:--</div>
+    <div class="clock" id="clock">--:--:--</div>
   </div>
 
-  <div class="toggle">
-    <button id="btn-morning" onclick="setMode('morning')"></button>
-    <button id="btn-afternoon" onclick="setMode('afternoon')"></button>
-    <button id="btn-now" onclick="setMode('now')"></button>
-  </div>
+  <div class="route-label" id="route-label">Locatie bepalen…</div>
+  <div class="route-sub" id="route-sub"></div>
+  <div class="note" id="note"></div>
 
-  <div class="route-label" id="route-label"></div>
-  <div class="note" id="note" hidden>
-    <span id="note-text"></span>
-    <button class="swap-btn" onclick="flipNowDirection()">⇄ keer om</button>
-  </div>
+  <button class="swap-btn" id="swap-btn" onclick="flipDirection()">⇄ Keer om</button>
 
   <div class="board">
     <div id="rows">
@@ -338,14 +299,18 @@ const CONFIG = {
 function $(id){ return document.getElementById(id); }
 function pad(n){ return n.toString().padStart(2,'0'); }
 
+const A = CONFIG.stationA, B = CONFIG.stationB;
 const NOW_MINUTES = CONFIG.nowMinutes || 120;
 const MORE_MINUTES = CONFIG.moreMinutes || 60;
-let extraMinutes = 0;     // grows each time "Toon meer" is pressed; reset when switching tab
-let mode = null;          // 'morning' | 'afternoon' | 'now'
-let timer = null;
+
+let extraMinutes = 0;     // grows each time "Toon meer" is pressed
+let flipped = false;      // manual "other direction" override
 let loadToken = 0;        // guards against slow responses arriving out of order
-let flipNow = false;      // manual "other direction" override in 'now' mode
 let stationCache = null;
+
+function fmtDur(m){
+  return m % 60 === 0 ? `${m/60} u` : `${m} min`;
+}
 
 function toMin(hhmmStr){
   const [h, m] = hhmmStr.split(':').map(Number);
@@ -357,64 +322,15 @@ function minutesNow(){
   return d.getHours()*60 + d.getMinutes();
 }
 
-// Before switchTime the morning direction (inbound) is the likely one,
-// afterwards the afternoon direction (outbound). Used as the fallback
-// direction in 'Nu' when there is no location.
-function timeOfDayMode(){
-  return minutesNow() < toMin(CONFIG.switchTime || '12:00') ? 'morning' : 'afternoon';
+function updateClock(){
+  const d = new Date();
+  $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
+setInterval(updateClock, 1000);
+updateClock();
 
-function initialMode(){
-  const t = CONFIG.startTab;
-  if(t === 'now' || t === 'morning' || t === 'afternoon') return t;
-  const n = minutesNow();
-  if(n <= toMin(CONFIG.morning.end)) return 'morning';        // still within the morning commute
-  if(n < toMin(CONFIG.switchTime || '12:00')) return 'now';   // morning commute over, before midday
-  if(n <= toMin(CONFIG.afternoon.end)) return 'afternoon';    // afternoon commute (not over yet)
-  return 'now';                                               // evening, after the afternoon commute
-}
-
-function fmtDur(m){
-  return m % 60 === 0 ? `${m/60} u` : `${m} min`;
-}
-
-function makeBtn(id, title, sub){
-  const b = $(id);
-  b.innerHTML = '';
-  const t = document.createElement('span');
-  t.textContent = title;
-  const s = document.createElement('small');
-  s.textContent = sub;
-  b.appendChild(t);
-  b.appendChild(s);
-}
-
-function initLabels(){
-  $('page-title').textContent = `${CONFIG.morning.from} ⇄ ${CONFIG.morning.to}`;
-  makeBtn('btn-morning', 'Ochtend', `${CONFIG.morning.from} → ${CONFIG.morning.to}`);
-  makeBtn('btn-afternoon', 'Namiddag', `${CONFIG.afternoon.from} → ${CONFIG.afternoon.to}`);
-  makeBtn('btn-now', 'Nu', `dichtstbij · ${fmtDur(NOW_MINUTES)}`);
-}
-
-function setMode(m){
-  mode = m;
-  extraMinutes = 0;
-  $('more-btn').hidden = true;
-  ['morning','afternoon','now'].forEach(k => $('btn-' + k).classList.toggle('active', k === m));
-  $('note').hidden = (m !== 'now');
-  if(m === 'now'){
-    flipNow = false;
-    $('note-text').textContent = '';
-    $('route-label').textContent = 'Locatie bepalen…';
-  } else {
-    const c = CONFIG[m];
-    $('route-label').textContent = `${c.from} → ${c.to}  ·  ${c.start}–${c.end}`;
-  }
-  load();
-}
-
-function flipNowDirection(){
-  flipNow = !flipNow;
+function flipDirection(){
+  flipped = !flipped;
   extraMinutes = 0;
   load();
 }
@@ -424,20 +340,7 @@ function showMore(){
   load(true);   // keep the current list on screen while the extra trains load
 }
 
-function updateClock(){
-  const d = new Date();
-  $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-setInterval(updateClock, 1000);
-updateClock();
-
 /* ---------- date helpers ---------- */
-function atTime(hhmmStr){
-  const [h, m] = hhmmStr.split(':').map(Number);
-  const d = new Date();
-  d.setHours(h, m, 0, 0);
-  return d;
-}
 function ddmmyy(d){ return `${pad(d.getDate())}${pad(d.getMonth()+1)}${d.getFullYear().toString().slice(-2)}`; }
 function hhmm(d){ return `${pad(d.getHours())}${pad(d.getMinutes())}`; }
 function fmtTime(unixSeconds){
@@ -464,7 +367,7 @@ async function fetchWindow(s, startDate, endDate){
   const seen = new Map();
   let cursor = new Date(startDate);
   let guard = 0;
-  while(cursor <= endDate && guard < 8){
+  while(cursor <= endDate && guard < 10){
     guard++;
     const batch = await fetchBatch(s, cursor);
     if(batch.length === 0) break;
@@ -529,11 +432,19 @@ function fmtDist(km){
   return km < 1 ? `${Math.round(km*1000)} m` : `${km.toFixed(1).replace('.', ',')} km`;
 }
 
-// Picks the commute route that departs from the station closest to you.
-// Falls back to the morning/afternoon route (by time of day) if location fails.
-async function resolveNowRoute(){
-  const routes = [CONFIG.morning, CONFIG.afternoon];
-  let route = CONFIG[timeOfDayMode()];
+// Direction used when there is no location: A → B from firstDirectionFrom
+// until secondDirectionFrom, B → A the rest of the day.
+function fallbackRoute(){
+  const n = minutesNow();
+  const first = toMin(CONFIG.firstDirectionFrom || '01:00');
+  const second = toMin(CONFIG.secondDirectionFrom || '12:00');
+  return (n >= first && n < second) ? { from: A, to: B } : { from: B, to: A };
+}
+
+// Departs from whichever of the two stations is closest to you.
+async function resolveRoute(){
+  const routes = [{ from: A, to: B }, { from: B, to: A }];
+  let route = fallbackRoute();
   let note;
   try{
     const [pos, stations] = await Promise.all([getPosition(), loadStations()]);
@@ -549,14 +460,14 @@ async function resolveNowRoute(){
       route = best.r;
       note = `📍 Dichtstbij: ${best.r.from} (${fmtDist(best.d)})`;
     } else {
-      note = 'Station niet gevonden — route volgens het uur';
+      note = 'Station niet gevonden — richting volgens het uur';
     }
   } catch(e){
     note = (e && e.code === 1)
-      ? 'Locatie geweigerd — route volgens het uur'
-      : 'Locatie niet beschikbaar — route volgens het uur';
+      ? 'Locatie geweigerd — richting volgens het uur'
+      : 'Locatie niet beschikbaar — richting volgens het uur';
   }
-  if(flipNow){
+  if(flipped){
     route = { from: route.to, to: route.from };
     note += ' · omgekeerd';
   }
@@ -570,36 +481,25 @@ async function load(quiet){
   if(!quiet) rowsEl.innerHTML = '<div class="empty blink">Treinen laden…</div>';
 
   try{
-    let route, start, end, emptyMsg, keepFrom = null;
+    const { route, note } = await resolveRoute();
+    if(token !== loadToken) return;
 
-    if(mode === 'now'){
-      const r = await resolveNowRoute();
-      if(token !== loadToken) return;
-      route = r.route;
-      const now = new Date();
-      start = new Date(now.getTime() - 10*60000);   // catch trains that are delayed
-      const span = NOW_MINUTES + extraMinutes;
-      end = new Date(now.getTime() + span*60000);
-      keepFrom = now.getTime();
-      $('note-text').textContent = r.note;
-      $('route-label').textContent = `${route.from} → ${route.to}  ·  nu → +${fmtDur(span)}`;
-      emptyMsg = `Geen treinen in de komende ${fmtDur(span)}.`;
-    } else {
-      const c = CONFIG[mode];
-      route = c;
-      start = atTime(c.start);
-      end = new Date(atTime(c.end).getTime() + extraMinutes*60000);
-      const endLabel = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
-      $('route-label').textContent = `${c.from} → ${c.to}  ·  ${c.start}–${endLabel}`;
-      emptyMsg = `Geen treinen gevonden tussen ${c.start} en ${endLabel}.`;
-    }
+    const now = new Date();
+    const span = NOW_MINUTES + extraMinutes;
+    const start = new Date(now.getTime() - 10*60000);   // catch trains that are delayed
+    const end = new Date(now.getTime() + span*60000);
+
+    $('route-label').textContent = `${route.from} → ${route.to}`;
+    $('route-sub').textContent = `nu → +${fmtDur(span)}`;
+    $('note').textContent = note;
+    $('swap-btn').textContent = `⇄ Keer om · ${route.to} → ${route.from}`;
 
     let conns = await fetchWindow(route, start, end);
     if(token !== loadToken) return;
-    if(keepFrom !== null) conns = conns.filter(c => depEffectiveMs(c) >= keepFrom);
+    conns = conns.filter(c => depEffectiveMs(c) >= now.getTime());
 
     if(conns.length === 0){
-      rowsEl.innerHTML = `<div class="empty">${emptyMsg}<br>Probeer te verversen of controleer belgiantrain.be.</div>`;
+      rowsEl.innerHTML = `<div class="empty">Geen treinen in de komende ${fmtDur(span)}.<br>Probeer "Toon meer" of controleer belgiantrain.be.</div>`;
     } else {
       renderRows(conns);
     }
@@ -646,9 +546,9 @@ function renderRows(conns){
   }).join('');
 }
 
-initLabels();
-setMode(initialMode());
-timer = setInterval(() => load(true), 60000);
+$('page-title').textContent = `${A} ⇄ ${B}`;
+load();
+setInterval(() => load(true), 60000);
 </script>
 </body>
 </html>

@@ -8,64 +8,65 @@ it from any device.
 
 ## What it does
 
-- Shows departures for two time windows you configure: a morning route and
-  an afternoon route.
-- Automatically picks the right window depending on when you open it
-  (before/after noon), with a toggle to switch manually.
-- A **Nu** tab uses your location to show the next trains from the nearest
-  commute station (see below).
-- Refreshes every 60 seconds and shows live delays, platform, and train
-  number.
-- Everything you'd ever want to change lives in one clearly marked block at
-  the top of `index.html`.
+Every time you open it, the app:
 
-## "Nu" tab: nearest station, next trains
+1. asks your browser for your location (if allowed),
+2. works out which of your two commute stations you are closest to,
+3. shows the trains leaving from there towards the other station for the
+   **next 2 hours**, with live delays, platform and train number.
 
-A third tab, **Nu**, shows the trains leaving in the next 2 hours from
-whichever of your commute stations you are closest to:
+A **⇄ Keer om** button right under the route lets you flip the direction
+whenever you want to see the opposite way. The label on the button shows
+the direction you would switch to.
 
-1. Tap **Nu** — the browser asks for permission to use your location.
-2. The app looks up the coordinates of your configured stations (via iRail's
-   `/stations/` endpoint), picks the closest one, and shows the route that
-   departs from it (e.g. near Mechelen → Mechelen → Leuven).
-3. If location is denied or unavailable, it falls back to the morning/afternoon
-   route by time of day. The **⇄ keer om** button flips the direction manually.
+Under the list, **Toon meer · +1 u** loads the trains after the ones shown.
+Each press adds another hour, as many times as you like. The list refreshes
+every 60 seconds and keeps the extra hours you opened.
 
-Your position never leaves your device: the browser only compares it with the
-station coordinates locally; iRail only receives station names and times.
-Location needs a secure page, so it works on the GitHub Pages `https://` link
-(not always when opening the file straight from disk).
+Your position never leaves your device: the browser only compares it with
+the station coordinates (looked up via iRail's `/stations/` endpoint);
+iRail only receives station names and times. Location needs a secure page,
+so it works on the GitHub Pages `https://` link (not always when opening
+the file straight from disk).
 
-Trains that are delayed but have not actually left yet stay "upcoming"
-(scheduled time + delay is used to decide what is past).
+### When location is not available
 
-### Which tab opens first
+If location is denied, switched off or times out, the direction falls back
+to the time of day:
 
-With the default `startTab: 'auto'` the app opens on the most useful tab for
-the time of day:
-
-| When you open it | Tab shown |
+| Time | Direction |
 |---|---|
-| From midnight until the end of the morning window (e.g. 09:00) | Ochtend |
-| After the morning window, before 12:00 | **Nu** |
-| From 12:00 until the end of the afternoon window (e.g. 17:30) | Namiddag |
-| After the afternoon window, until midnight | **Nu** |
+| 01:00 – 11:59 | Station A → Station B (e.g. Mechelen → Leuven) |
+| 12:00 – 00:59 | Station B → Station A (e.g. Leuven → Mechelen) |
 
-In **Nu**, if location is denied or switched off, the direction falls back to
-the likely one: inbound (morning route) before 12:00, outbound (afternoon
-route) from 12:00 on. **⇄ keer om** always lets you flip it.
+A line under the route says when this fallback is being used. Delayed trains
+that have not actually left yet stay in the list (scheduled time + delay
+decides what has gone).
 
-Settings in the `CONFIG` block: `nowMinutes` (default `120`),
-`switchTime` (default `'12:00'`, the morning/afternoon switch) and `startTab`
-(`'auto'`, `'now'`, `'morning'` or `'afternoon'` to always open on one tab).
+## Settings
 
-## "Toon meer" button
+Open `index.html` in any text editor and look at the very top of the file —
+the block that starts with `const CONFIG = {`:
 
-Under the list on every tab, **Toon meer · +1 u** loads the trains after
-the ones shown. Each press extends the window by another hour, as many times
-as you like; the route line above the list shows the new end time. Switching
-tab (or flipping direction in **Nu**) goes back to the normal window. The step
-is the `moreMinutes` setting in `CONFIG` (default `60`).
+```js
+const CONFIG = {
+  stationA: 'Mechelen',          // eerste station van je traject
+  stationB: 'Leuven',            // tweede station van je traject
+
+  nowMinutes: 120,               // zoveel minuten vooruit tonen (vanaf nu)
+  moreMinutes: 60,               // elke klik op "Toon meer" voegt zoveel minuten toe
+
+  // Alleen gebruikt als de locatie niet beschikbaar is:
+  firstDirectionFrom: '01:00',   // vanaf dit uur: richting A → B
+  secondDirectionFrom: '12:00'   // vanaf dit uur tot firstDirectionFrom: richting B → A
+};
+```
+
+Change the station names, the look-ahead (`nowMinutes`), the "Toon meer"
+step (`moreMinutes`) or the fallback hours (`firstDirectionFrom`,
+`secondDirectionFrom`, 24-hour `UU:MM`) and save. Everything else — title,
+labels, data fetched — follows from these values. Nothing else in the file
+needs to change.
 
 ## Publishing it on GitHub Pages
 
@@ -97,11 +98,11 @@ below can be done in the browser.
 5. **Open it from anywhere.**
    Bookmark that link, or turn it into a home-screen/desktop icon (see
    below). Every time you open it, it fetches live data — you never need to
-   re-upload anything unless you change the config.
+   re-upload anything unless you change the settings.
 
 ## Updating it later
 
-Whenever you want to change a station or time window (see below), edit the
+Whenever you want to change a station or a setting (see Settings above), edit the
 file locally, then on the repo page click into `index.html` → the pencil
 (✎) **Edit** icon → paste your changes → **Commit changes**. The live page
 updates automatically within a minute or two, no re-publishing step needed.
@@ -137,32 +138,6 @@ domain — free to use without restriction) instead of the custom one:
 4. Commit — the live site picks it up automatically, no other changes
    needed.
 
-
-
-Open `index.html` in any text editor and look at the very top of the file —
-you'll see a block that starts with `const CONFIG = {`. It looks like this:
-
-```js
-const CONFIG = {
-  morning: {
-    from:  'Mechelen',   // vertrekstation 's ochtends
-    to:    'Leuven',     // aankomststation 's ochtends
-    start: '07:20',      // begin van het tijdvenster
-    end:   '09:00'       // einde van het tijdvenster
-  },
-  afternoon: {
-    from:  'Leuven',     // vertrekstation 's namiddags
-    to:    'Mechelen',   // aankomststation 's namiddags
-    start: '15:00',      // begin van het tijdvenster
-    end:   '17:30'       // einde van het tijdvenster
-  }
-};
-```
-
-Change the station names or the `start`/`end` times (24-hour `UU:MM`
-format) and save — everything else in the app (titles, button labels, the
-data it fetches) updates automatically from these six values. Nothing else
-in the file needs to change.
 
 ## Adding a home-screen / desktop icon
 
