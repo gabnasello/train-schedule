@@ -1,4 +1,4 @@
-# Treinschema — Mechelen ⇄ Leuven
+# Treinschema — commute trains, with your location
 
 A single-file webapp that shows your regular commute train times, pulled live
 from [iRail](https://docs.irail.be/) (the open data API behind
@@ -43,7 +43,28 @@ A line under the route says when this fallback is being used. Delayed trains
 that have not actually left yet stay in the list (scheduled time + delay
 decides what has gone).
 
-## Settings
+## Choosing your stations (no coding)
+
+Anyone can use the published page for their own commute — no fork needed:
+
+1. Tap **⚙ Stations** at the bottom of the page.
+2. Type the two stations (suggestions come from iRail's station list; a
+   typo gets a "did you mean…" message). **A** is where you leave in the
+   morning, **B** where you go.
+3. Tap **Opslaan**. The page title, directions and nearest-station logic all
+   follow. **Standaard** goes back to the defaults.
+4. Then add the page to your home screen (see below) — your choice is stored
+   in the link, so the app icon opens with *your* stations.
+
+You can also share or bookmark a link directly:
+`https://YOUR-USERNAME.github.io/train-schedule/?a=Gent-Sint-Pieters&b=Brussel-Zuid`
+
+Which stations are used, in order of priority: the link (`?a=…&b=…`) → the
+choice saved on this device → the defaults in `CONFIG`. Distances come from
+the station coordinates iRail provides, so nothing else needs changing when
+the stations change.
+
+## Defaults and other settings
 
 Open `index.html` in any text editor and look at the very top of the file —
 the block that starts with `const CONFIG = {`:
@@ -62,11 +83,10 @@ const CONFIG = {
 };
 ```
 
-Change the station names, the look-ahead (`nowMinutes`), the "Toon meer"
-step (`moreMinutes`) or the fallback hours (`firstDirectionFrom`,
-`secondDirectionFrom`, 24-hour `UU:MM`) and save. Everything else — title,
-labels, data fetched — follows from these values. Nothing else in the file
-needs to change.
+`stationA`/`stationB` are the defaults people see before choosing their own
+(forks: change these two lines to make your copy open on your commute).
+`nowMinutes`, `moreMinutes` and the fallback hours (24-hour `UU:MM`) are the
+same for everyone on that copy of the page.
 
 ## Publishing it on GitHub Pages
 
@@ -116,7 +136,7 @@ updates automatically within a minute or two, no re-publishing step needed.
 | `icon-192.png`, `icon-512.png` | Rasterized versions for the home-screen icon (referenced by `manifest.json`). |
 | `apple-touch-icon.png` | 180×180 icon iOS uses for "Add to Home Screen". |
 | `favicon-32.png` | Fallback favicon for browsers that don't support SVG favicons. |
-| `manifest.json` | Web app manifest — tells Android/Chrome what icon and name to use when added to the home screen. |
+| `manifest.json` | Fallback web app manifest. When the page runs, it generates its own manifest with your chosen stations in the start link, so "install app" on Android keeps them. |
 
 Upload **all of these files** to the repo (same folder, no subfolders) — `index.html` references them by their plain filename.
 
@@ -141,14 +161,20 @@ domain — free to use without restriction) instead of the custom one:
 
 ## Adding a home-screen / desktop icon
 
-Once the GitHub Pages link works in your browser:
+Choose your stations first (⚙ Stations), then add the page. The link in the
+address bar now contains your stations, and that is what gets saved:
 
-**Phone:** open the link, then use your browser's share/menu button →
-**Add to Home Screen**.
+**iPhone (Safari):** share button → **Add to Home Screen**. (iOS keeps a
+separate storage for home-screen apps, which is why the stations travel in
+the link rather than only on the device.)
 
-**Computer (Chrome/Edge):** open the link, then use the browser menu →
-**More tools / Apps → Create shortcut / Install this site as an app**, and
-check "Open as window" for an icon that opens without browser chrome.
+**Android (Chrome):** menu → **Install app** / **Add to Home screen**.
+
+**Computer (Chrome/Edge):** menu → **Cast, save and share → Install page as
+app** (or **More tools → Create shortcut**, tick "Open as window").
+
+If you later change stations, add the page to the home screen again (and
+remove the old icon), so the new link is the one saved.
 
 ## Data source
 

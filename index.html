@@ -7,7 +7,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="favicon-32.png" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="manifest" href="manifest.json">
+<link rel="manifest" id="manifest-link" href="manifest.json">
 <meta name="theme-color" content="#0c0e0a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -266,6 +266,55 @@ const CONFIG = {
     box-shadow: 0 0 14px var(--amber-glow);
   }
   .swap-btn:active{ background: var(--amber); color: var(--board-bg); }
+  .footer-btns{ display:flex; gap:8px; }
+  .settings{
+    margin-top: 14px;
+    background: var(--board-bg-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 14px;
+    font-size: 12px;
+  }
+  .settings[hidden]{ display:none; }
+  .settings label{
+    display:block;
+    margin: 10px 0 4px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--grey);
+  }
+  .settings input{
+    width:100%;
+    padding: 10px;
+    background: var(--board-bg);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--amber);
+    font-family: inherit;
+    font-size: 16px;
+  }
+  .settings .btn-row{ display:flex; gap:8px; margin-top: 14px; }
+  .settings .btn-row button{
+    flex:1;
+    padding: 10px 6px;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--grey);
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor:pointer;
+  }
+  .settings .btn-row button.primary{
+    background: var(--amber);
+    border-color: var(--amber);
+    color: var(--board-bg);
+  }
+  .settings .msg{ color: var(--red); margin-top: 10px; min-height: 14px; line-height: 1.5; }
+  .settings .hint{ color: var(--grey); margin-top: 8px; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -289,9 +338,28 @@ const CONFIG = {
 
   <button class="more-btn" id="more-btn" onclick="showMore()" hidden></button>
 
+  <div class="settings" id="settings" hidden>
+    <label for="in-a">Station A — waar je 's ochtends vertrekt</label>
+    <input id="in-a" list="station-list" autocomplete="off" autocapitalize="words" spellcheck="false">
+    <label for="in-b">Station B — waar je 's ochtends naartoe gaat</label>
+    <input id="in-b" list="station-list" autocomplete="off" autocapitalize="words" spellcheck="false">
+    <datalist id="station-list"></datalist>
+    <div class="msg" id="set-msg"></div>
+    <div class="btn-row">
+      <button class="primary" onclick="saveSettings()">Opslaan</button>
+      <button onclick="resetSettings()">Standaard</button>
+      <button onclick="closeSettings()">Sluiten</button>
+    </div>
+    <div class="hint">Tip: voeg de pagina daarna toe aan je startscherm — je keuze zit in de link.
+    Zonder locatie toont de app 's ochtends A → B en 's middags B → A.</div>
+  </div>
+
   <div class="footer">
     <span id="last-updated">—</span>
-    <button class="refresh-btn" onclick="load()">↻ Ververs</button>
+    <div class="footer-btns">
+      <button class="refresh-btn" onclick="openSettings()">⚙ Stations</button>
+      <button class="refresh-btn" onclick="load()">↻ Ververs</button>
+    </div>
   </div>
 </div>
 
@@ -299,9 +367,34 @@ const CONFIG = {
 function $(id){ return document.getElementById(id); }
 function pad(n){ return n.toString().padStart(2,'0'); }
 
-const A = CONFIG.stationA, B = CONFIG.stationB;
+const STORE_KEY = 'treinSettings';
+
+// Compare station names ignoring case, accents, spaces and hyphens
+function norm(t){ return (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function sameName(x, y){ return norm(x) !== '' && norm(x) === norm(y); }
+function isDefault(a, b){ return sameName(a, CONFIG.stationA) && sameName(b, CONFIG.stationB); }
+function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Which stations are active: link parameters (?a=..&b=..) win, then the choice
+// saved on this device, then the defaults in CONFIG.
+function readSettings(){
+  let a = null, b = null;
+  try{
+    const q = new URLSearchParams(location.search);
+    if(q.get('a') && q.get('b')){ a = q.get('a'); b = q.get('b'); }
+  } catch(e){}
+  if(!a){
+    try{
+      const st = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+      if(st && st.a && st.b){ a = st.a; b = st.b; }
+    } catch(e){}
+  }
+  return { a: a || CONFIG.stationA, b: b || CONFIG.stationB };
+}
+let { a: A, b: B } = readSettings();
 const NOW_MINUTES = CONFIG.nowMinutes || 120;
 const MORE_MINUTES = CONFIG.moreMinutes || 60;
+let stationListFilled = false;
 
 let extraMinutes = 0;     // grows each time "Toon meer" is pressed
 let flipped = false;      // manual "other direction" override
@@ -388,7 +481,7 @@ async function fetchWindow(s, startDate, endDate){
 
 async function loadStations(){
   if(stationCache) return stationCache;
-  const res = await fetch('https://api.irail.be/stations/?format=json&lang=en');
+  const res = await fetch('https://api.irail.be/stations/?format=json&lang=nl');
   if(!res.ok) throw new Error('HTTP ' + res.status);
   const data = await res.json();
   stationCache = data.station || [];
@@ -512,7 +605,11 @@ async function load(quiet){
   } catch(err){
     if(token !== loadToken) return;
     $('more-btn').hidden = true;
-    rowsEl.innerHTML = `<div class="error">Kan geen verbinding maken met de iRail-data.<br>${err.message}<br><br>Controleer je internetverbinding of probeer later opnieuw.</div>`;
+    if(/^HTTP (400|404)/.test(err.message || '')){
+      rowsEl.innerHTML = `<div class="error">Station niet gevonden of ongeldig: ${esc(A)} / ${esc(B)}.<br>Pas ze aan via ⚙ Stations.</div>`;
+    } else {
+      rowsEl.innerHTML = `<div class="error">Kan geen verbinding maken met de iRail-data.<br>${esc(err.message)}<br><br>Controleer je internetverbinding of probeer later opnieuw.</div>`;
+    }
   }
 }
 
@@ -546,7 +643,112 @@ function renderRows(conns){
   }).join('');
 }
 
-$('page-title').textContent = `${A} ⇄ ${B}`;
+/* ---------- stations picker, link and "save as app" ---------- */
+let manifestUrl = null;
+
+function syncUrl(){
+  try{
+    const url = isDefault(A, B)
+      ? location.pathname
+      : `${location.pathname}?a=${encodeURIComponent(A)}&b=${encodeURIComponent(B)}`;
+    history.replaceState(null, '', url + location.hash);
+  } catch(e){}
+}
+
+// A manifest generated at runtime, so that "install app" on Android keeps the
+// chosen stations in its start link (a fixed manifest.json would forget them).
+function updateManifest(){
+  try{
+    if(!/^https?:/.test(location.protocol)) return;
+    const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+    const manifest = {
+      name: `${A} ⇄ ${B}`,
+      short_name: 'Trein',
+      start_url: location.origin + location.pathname + location.search,
+      scope: base,
+      display: 'standalone',
+      background_color: '#0c0e0a',
+      theme_color: '#0c0e0a',
+      icons: [
+        { src: base + 'icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: base + 'icon-512.png', sizes: '512x512', type: 'image/png' }
+      ]
+    };
+    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+    const old = manifestUrl;
+    manifestUrl = URL.createObjectURL(blob);
+    $('manifest-link').setAttribute('href', manifestUrl);
+    if(old) URL.revokeObjectURL(old);
+  } catch(e){}
+}
+
+function applySettingsToPage(){
+  $('page-title').textContent = `${A} ⇄ ${B}`;
+  document.title = `${A} ⇄ ${B}`;
+  syncUrl();
+  updateManifest();
+}
+
+async function openSettings(){
+  $('settings').hidden = false;
+  $('in-a').value = A;
+  $('in-b').value = B;
+  $('set-msg').textContent = '';
+  $('settings').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  try{
+    const list = await loadStations();
+    if(!stationListFilled){
+      $('station-list').innerHTML = list.map(s => `<option value="${esc(s.name)}"></option>`).join('');
+      stationListFilled = true;
+    }
+  } catch(e){}
+}
+
+function closeSettings(){ $('settings').hidden = true; }
+
+function exactStation(list, name){
+  return list.find(s => sameName(s.name, name) || sameName(s.standardname, name));
+}
+
+async function saveSettings(){
+  const a = $('in-a').value.trim(), b = $('in-b').value.trim();
+  const msg = $('set-msg');
+  if(!a || !b){ msg.textContent = 'Vul beide stations in.'; return; }
+  if(sameName(a, b)){ msg.textContent = 'Kies twee verschillende stations.'; return; }
+
+  let ca = a, cb = b, list = null;
+  try{ list = await loadStations(); } catch(e){}   // no list -> accept as typed
+  if(list){
+    const ra = exactStation(list, a), rb = exactStation(list, b);
+    const bad = [!ra && a, !rb && b].filter(Boolean);
+    if(bad.length){
+      const sug = list.filter(s => norm(s.name).includes(norm(bad[0]))).slice(0, 3).map(s => s.name);
+      msg.textContent = `Niet gevonden: ${bad.map(x => `"${x}"`).join(', ')}. ` +
+        (sug.length ? `Bedoelde je: ${sug.join(', ')}?` : 'Kies uit de lijst.');
+      return;
+    }
+    ca = ra.name; cb = rb.name;
+  }
+
+  A = ca; B = cb;
+  flipped = false;
+  extraMinutes = 0;
+  try{
+    if(isDefault(A, B)) localStorage.removeItem(STORE_KEY);
+    else localStorage.setItem(STORE_KEY, JSON.stringify({ a: A, b: B }));
+  } catch(e){}
+  applySettingsToPage();
+  closeSettings();
+  load();
+}
+
+function resetSettings(){
+  $('in-a').value = CONFIG.stationA;
+  $('in-b').value = CONFIG.stationB;
+  saveSettings();
+}
+
+applySettingsToPage();
 load();
 setInterval(() => load(true), 60000);
 </script>
