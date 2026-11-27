@@ -191,6 +191,11 @@ const CONFIG = {
     cursor:pointer;
   }
   .more-btn[hidden]{ display:none; }
+  .time-controls{display:flex;gap:8px;margin-top:8px;}
+  .time-controls button{flex:1;background:var(--board-bg-2);border:1px solid var(--line);color:var(--grey);padding:9px 8px;border-radius:4px;font-family:inherit;font-size:11px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;}
+  .time-controls button:hover{color:var(--amber);border-color:var(--amber-dim);}
+  .row.cancelled{opacity:.48;}
+  .row.cancelled .time,.row.cancelled .via,.row.cancelled .meta{text-decoration:line-through;text-decoration-color:var(--red);}
   .more-btn:hover{ border-color: var(--amber-dim); }
   .footer{
     margin-top: 14px;
@@ -337,6 +342,10 @@ const CONFIG = {
   </div>
 
   <button class="more-btn" id="more-btn" onclick="showMore()" hidden></button>
+  <div class="time-controls" aria-label="Tijdstip bekijken">
+    <button type="button" onclick="browseBackHour()">−1 uur</button>
+    <button type="button" onclick="browseNow()">Nu</button>
+  </div>
 
   <div class="settings" id="settings" hidden>
     <label for="in-a">Station A — waar je 's ochtends vertrekt</label>
@@ -397,6 +406,7 @@ const MORE_MINUTES = CONFIG.moreMinutes || 60;
 let stationListFilled = false;
 
 let extraMinutes = 0;     // grows each time "Toon meer" is pressed
+let browseOffsetMinutes = 0; // lets you inspect the timetable relative to an earlier time
 let flipped = false;      // manual "other direction" override
 let loadToken = 0;        // guards against slow responses arriving out of order
 let stationCache = null;
@@ -431,6 +441,18 @@ function flipDirection(){
 function showMore(){
   extraMinutes += MORE_MINUTES;
   load(true);   // keep the current list on screen while the extra trains load
+}
+
+function browseBackHour(){
+  browseOffsetMinutes -= 60;
+  extraMinutes = 0;
+  load();
+}
+
+function browseNow(){
+  browseOffsetMinutes = 0;
+  extraMinutes = 0;
+  load();
 }
 
 /* ---------- date helpers ---------- */
@@ -577,7 +599,7 @@ async function load(quiet){
     const { route, note } = await resolveRoute();
     if(token !== loadToken) return;
 
-    const now = new Date();
+    const now = new Date(Date.now() + browseOffsetMinutes * 60000);
     const span = NOW_MINUTES + extraMinutes;
     const start = new Date(now.getTime() - 10*60000);   // catch trains that are delayed
     const end = new Date(now.getTime() + span*60000);
@@ -589,7 +611,10 @@ async function load(quiet){
 
     let conns = await fetchWindow(route, start, end);
     if(token !== loadToken) return;
-    conns = conns.filter(c => depEffectiveMs(c) >= now.getTime());
+    conns = conns.filter(c =>
+      depEffectiveMs(c) >= now.getTime() ||
+      (c.departure.canceled === '1' && depMs(c) >= now.getTime())
+    );
 
     if(conns.length === 0){
       rowsEl.innerHTML = `<div class="empty">Geen treinen in de komende ${fmtDur(span)}.<br>Probeer "Toon meer" of controleer belgiantrain.be.</div>`;
@@ -622,7 +647,7 @@ function renderRow(c, isNext, isPast){
     ? `<span class="delay late">+${Math.round(delaySec/60)}′</span>`
     : `<span class="delay ontime">op tijd</span>`;
   const canceled = dep.canceled === '1';
-  return `<div class="row ${isNext ? 'next' : ''} ${isPast ? 'past' : ''} flap">
+  return `<div class="row ${isNext ? 'next' : ''} ${isPast ? 'past' : ''} ${canceled ? 'cancelled' : ''} flap">
     <div class="time">${fmtTime(dep.time)}</div>
     <div class="via">${vehicle}</div>
     <div class="meta">
