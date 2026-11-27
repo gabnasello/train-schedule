@@ -17,7 +17,9 @@ Every time you open it, the app:
 3. shows upcoming trains leaving from there towards the other station for the
    **next 2 hours**, with live delays, platform and train number. Cancelled
    departures remain visible when their scheduled time is still upcoming and
-   are clearly marked and struck through.
+   are clearly marked and struck through. Departures from the last 10 minutes
+   remain briefly visible with a strikethrough, while delayed trains stay
+   visible until their effective departure time.
 
 A **⇄ Keer om** button right under the route lets you flip the direction
 whenever you want to see the opposite way. The label on the button shows
