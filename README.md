@@ -1,5 +1,7 @@
 # Treinschema — commute trains, with your location
 
+![Treinschema app logo](icon.svg)
+
 A single-file webapp that shows your regular commute train times, pulled live
 from [iRail](https://docs.irail.be/) (the open data API behind
 belgiantrain.be). No backend, no build step — it's one `index.html` file,
@@ -12,8 +14,10 @@ Every time you open it, the app:
 
 1. asks your browser for your location (if allowed),
 2. works out which of your two commute stations you are closest to,
-3. shows the trains leaving from there towards the other station for the
-   **next 2 hours**, with live delays, platform and train number.
+3. shows upcoming trains leaving from there towards the other station for the
+   **next 2 hours**, with live delays, platform and train number. Cancelled
+   departures remain visible when their scheduled time is still upcoming and
+   are clearly marked and struck through.
 
 A **⇄ Keer om** button right under the route lets you flip the direction
 whenever you want to see the opposite way. The label on the button shows
@@ -22,6 +26,11 @@ the direction you would switch to.
 Under the list, **Toon meer · +1 u** loads the trains after the ones shown.
 Each press adds another hour, as many times as you like. The list refreshes
 every 60 seconds and keeps the extra hours you opened.
+
+Use **−1 uur** to inspect the timetable one hour earlier; press it again to
+move back another hour. **Nu** returns to the live timetable. In this view,
+trains are filtered relative to the selected timetable time, so you can check
+past schedules (including summer timetables) without changing your device clock.
 
 Your position never leaves your device: the browser only compares it with
 the station coordinates (looked up via iRail's `/stations/` endpoint);
