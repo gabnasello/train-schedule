@@ -605,7 +605,9 @@ async function load(quiet){
     const end = new Date(now.getTime() + span*60000);
 
     $('route-label').textContent = `${route.from} → ${route.to}`;
-    $('route-sub').textContent = `nu → +${fmtDur(span)}`;
+    $('route-sub').textContent = browseOffsetMinutes === 0
+      ? `nu → +${fmtDur(span)}`
+      : `${fmtDur(Math.abs(browseOffsetMinutes))} terug · ${pad(now.getHours())}:${pad(now.getMinutes())} → +${fmtDur(span)}`;
     $('note').textContent = note;
     $('swap-btn').textContent = `⇄ Keer om · ${route.to} → ${route.from}`;
 
