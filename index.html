@@ -615,7 +615,7 @@ async function load(quiet){
     if(token !== loadToken) return;
     conns = conns.filter(c =>
       depEffectiveMs(c) >= now.getTime() ||
-      (c.departure.canceled === '1' && depMs(c) >= now.getTime())
+      depMs(c) >= now.getTime() - 10*60000
     );
 
     if(conns.length === 0){
@@ -664,7 +664,7 @@ function renderRows(conns){
   let nextMarked = false;
   $('rows').innerHTML = conns.map(c => {
     const isPast = depEffectiveMs(c) <= nowMs;
-    const isNext = !nextMarked && !isPast;
+    const isNext = !nextMarked && !isPast && c.departure.canceled !== '1';
     if(isNext) nextMarked = true;
     return renderRow(c, isNext, isPast);
   }).join('');
